@@ -1,0 +1,117 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  :root, html.dark {
+    --bg-page: #09090b;
+    --bg-panel: #111113;
+    --bg-hover: #1c1c21;
+    --bg-active: #27272a;
+    --highlight-row: #18181b;
+    --border-color: #27272a;
+    --border-subtle: #1f1f23;
+    --text-primary: #fafafa;
+    --text-secondary: #a1a1aa;
+    --text-muted: #71717a;
+    --accent: #3b82f6;
+
+    --btn-primary-bg: #fafafa;
+    --btn-primary-text: #09090b;
+    --btn-primary-hover: #f4f4f5;
+
+    --avatar-bg: #27272a;
+    --avatar-text: #fafafa;
+
+    --badge-success-bg: rgba(16, 185, 129, 0.12);
+    --badge-success-border: rgba(16, 185, 129, 0.25);
+    --badge-success-text: #34d399;
+
+    --badge-amber-bg: rgba(245, 158, 11, 0.12);
+    --badge-amber-border: rgba(245, 158, 11, 0.25);
+    --badge-amber-text: #fbbf24;
+
+    --badge-urgent-bg: rgba(239, 68, 68, 0.12);
+    --badge-urgent-border: rgba(239, 68, 68, 0.25);
+    --badge-urgent-text: #f87171;
+
+    color-scheme: dark;
+  }
+
+  html.light {
+    --bg-page: #f8fafc;
+    --bg-panel: #ffffff;
+    --bg-hover: #f1f5f9;
+    --bg-active: #e2e8f0;
+    --highlight-row: #f1f5f9;
+    --border-color: #e2e8f0;
+    --border-subtle: #edf2f7;
+    --text-primary: #0f172a;
+    --text-secondary: #334155;
+    --text-muted: #64748b;
+    --accent: #2563eb;
+
+    --btn-primary-bg: #0f172a;
+    --btn-primary-text: #ffffff;
+    --btn-primary-hover: #1e293b;
+
+    --avatar-bg: #e2e8f0;
+    --avatar-text: #0f172a;
+
+    --badge-success-bg: #ecfdf5;
+    --badge-success-border: #a7f3d0;
+    --badge-success-text: #065f46;
+
+    --badge-amber-bg: #fffbeb;
+    --badge-amber-border: #fde68a;
+    --badge-amber-text: #92400e;
+
+    --badge-urgent-bg: #fef2f2;
+    --badge-urgent-border: #fecaca;
+    --badge-urgent-text: #b91c1c;
+
+    color-scheme: light;
+  }
+
+  * {
+    border-color: var(--border-color);
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    background-color: var(--bg-page);
+    color: var(--text-primary);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    letter-spacing: -0.01em;
+    font-size: 15px;
+    line-height: 1.5;
+  }
+
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  input, select, textarea {
+    font-size: 15px;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--text-muted);
+  }
+}
