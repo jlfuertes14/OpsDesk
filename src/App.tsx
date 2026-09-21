@@ -10,6 +10,18 @@ import { AccountModal } from './components/AccountModal';
 import { ToastContainer } from './components/ToastContainer';
 import { INITIAL_TICKETS, DEFAULT_ACCOUNTS } from './data/mockTickets';
 import { Ticket, QueueId, Priority, Status, ToastMessage, UserAccount } from './types/ticket';
+import { 
+  supabase, 
+  isSupabaseConfigured, 
+  getTickets, 
+  insertTicket, 
+  updateTicketStatusDb, 
+  updateTicketPriorityDb, 
+  assignTicketDb, 
+  insertCommentDb, 
+  getProfiles, 
+  saveProfile 
+} from './lib/supabase';
 
 export const App: React.FC = () => {
   // Accounts State: defaults to John Lester Fuertes
@@ -37,7 +49,7 @@ export const App: React.FC = () => {
     return DEFAULT_ACCOUNTS[0];
   });
 
-  // Tickets State (starts completely empty, zero mock entries)
+  // Tickets State
   const [tickets, setTickets] = useState<Ticket[]>(() => {
     const saved = localStorage.getItem('opsdesk_production_tickets_v4');
     if (saved) {
@@ -65,7 +77,49 @@ export const App: React.FC = () => {
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
-  // Persist accounts & tickets
+  // Initial fetch and Supabase Realtime synchronization
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+
+    // Load initial profiles from Supabase
+    getProfiles().then((dbProfiles) => {
+      if (dbProfiles.length > 0) {
+        setAccounts((prev) => {
+          const map = new Map(prev.map((a) => [a.email, a]));
+          dbProfiles.forEach((p) => map.set(p.email, p));
+          return Array.from(map.values());
+        });
+      }
+    });
+
+    // Load initial tickets from Supabase
+    getTickets().then((dbTickets) => {
+      if (dbTickets.length > 0) {
+        setTickets(dbTickets);
+      }
+    });
+
+    // Realtime listener
+    const channel = supabase
+      .channel('realtime-opsdesk')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tickets' }, () => {
+        getTickets().then((fresh) => {
+          if (fresh.length > 0) setTickets(fresh);
+        });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ticket_comments' }, () => {
+        getTickets().then((fresh) => {
+          if (fresh.length > 0) setTickets(fresh);
+        });
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  // Persist accounts & tickets to localStorage as local mirror
   useEffect(() => {
     localStorage.setItem('opsdesk_accounts_v4', JSON.stringify(accounts));
   }, [accounts]);
@@ -169,19 +223,29 @@ export const App: React.FC = () => {
     });
   };
 
-  const handleCreateAccount = (data: Omit<UserAccount, 'id' | 'avatarInitials'>) => {
-    const newAccount: UserAccount = {
+  const handleCreateAccount = async (data: Omit<UserAccount, 'id' | 'avatarInitials'>) => {
+    const avatarInitials = data.name.slice(0, 2).toUpperCase();
+    const localNewAccount: UserAccount = {
       ...data,
       id: 'user-' + Math.random().toString(36).substring(2, 9),
-      avatarInitials: data.name.slice(0, 2).toUpperCase()
+      avatarInitials
     };
 
-    setAccounts((prev) => [...prev, newAccount]);
-    setCurrentUser(newAccount);
+    // Save locally
+    setAccounts((prev) => [...prev, localNewAccount]);
+    setCurrentUser(localNewAccount);
+
+    // Save to Supabase
+    saveProfile(data).then((saved) => {
+      if (saved) {
+        setAccounts((prev) => prev.map((a) => (a.email === saved.email ? saved : a)));
+      }
+    });
+
     addToast({
       type: 'success',
       title: 'Profile Created',
-      description: `Logged in as ${newAccount.name}`
+      description: `Logged in as ${localNewAccount.name}`
     });
   };
 
@@ -201,8 +265,13 @@ export const App: React.FC = () => {
       comments: []
     };
 
+    // Optimistic local state update
     setTickets((prev) => [newTicket, ...prev]);
     setActiveTicketId(newId);
+
+    // Persist to Supabase
+    insertTicket(newTicket);
+
     addToast({
       type: 'success',
       title: `Ticket ${newId} Created`,
@@ -216,11 +285,18 @@ export const App: React.FC = () => {
       prev.map((t) => (t.id === ticketId ? { ...t, status: newStatus, updatedAt: new Date().toISOString() } : t))
     );
 
+    // Supabase update
+    updateTicketStatusDb(ticketId, newStatus);
+
     addToast({
       type: 'info',
       title: `Ticket Updated`,
       description: `Status changed to ${newStatus}`,
-      undoAction: () => setTickets(previousTickets)
+      undoAction: () => {
+        setTickets(previousTickets);
+        const original = previousTickets.find((t) => t.id === ticketId);
+        if (original) updateTicketStatusDb(ticketId, original.status);
+      }
     });
   };
 
@@ -230,32 +306,44 @@ export const App: React.FC = () => {
       prev.map((t) => (t.id === ticketId ? { ...t, priority: newPriority, updatedAt: new Date().toISOString() } : t))
     );
 
+    // Supabase update
+    updateTicketPriorityDb(ticketId, newPriority);
+
     addToast({
       type: 'info',
       title: `Priority Updated`,
       description: `Changed to ${newPriority}`,
-      undoAction: () => setTickets(previousTickets)
+      undoAction: () => {
+        setTickets(previousTickets);
+        const original = previousTickets.find((t) => t.id === ticketId);
+        if (original) updateTicketPriorityDb(ticketId, original.priority);
+      }
     });
   };
 
   const handleAssignToMe = (ticketId: string) => {
     const previousTickets = [...tickets];
+    const assignee = {
+      name: currentUser.name,
+      email: currentUser.email,
+      tier: 'Tier 1 Support' as const
+    };
+
     setTickets((prev) =>
       prev.map((t) =>
         t.id === ticketId
           ? {
               ...t,
               status: t.status === 'triage' ? 'in_progress' : t.status,
-              assignee: {
-                name: currentUser.name,
-                email: currentUser.email,
-                tier: 'Tier 1 Support'
-              },
+              assignee,
               updatedAt: new Date().toISOString()
             }
           : t
       )
     );
+
+    // Supabase update
+    assignTicketDb(ticketId, assignee);
 
     addToast({
       type: 'success',
@@ -288,6 +376,9 @@ export const App: React.FC = () => {
         };
       })
     );
+
+    // Supabase insert comment
+    insertCommentDb(ticketId, newComment);
 
     addToast({
       type: 'success',
@@ -327,6 +418,9 @@ export const App: React.FC = () => {
           : t
       )
     );
+
+    selectedTicketIds.forEach((id) => updateTicketStatusDb(id, 'resolved'));
+
     addToast({
       type: 'success',
       title: `Bulk Resolved`,
